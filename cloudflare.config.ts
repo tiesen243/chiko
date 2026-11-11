@@ -7,7 +7,7 @@ export default defineConfig({
     entrypoint: "build/index.js",
     env: {
       DB: bindings.d1({
-        id: "aefeb332-0bad-4fc8-b08f-3cde37e6bbbd",
+        id: "00f0f4ec-705c-4c72-9998-fcdcf43675ea",
         name: "chiko-db",
       }),
     },
