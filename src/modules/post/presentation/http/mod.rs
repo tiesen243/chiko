@@ -1,3 +1,1 @@
-mod post_controller;
-
-pub use post_controller::PostController;
+pub mod post_controller;

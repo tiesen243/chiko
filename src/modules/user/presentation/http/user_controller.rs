@@ -1,69 +1,120 @@
 use worker::{Request, Response, Result, RouteContext};
 
-use crate::modules::user::application::{CreateUserDto, UpdateUserDto, UserService};
+use crate::modules::user::{
+    application::{CreateUserDto, UpdateUserDto, UserService},
+    domain::User,
+};
 
-pub struct UserController;
+#[utoipa::path(
+        get,
+        path = "/api/users",
+        tag = "Users",
+        responses(
+            (status = 200, description = "Get all users", body = [User])
+        )
+    )]
+pub async fn all(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let db = ctx.d1("DB")?;
+    let service = UserService::new(db);
 
-impl UserController {
-    pub async fn all(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
-        let db = ctx.d1("DB")?;
-        let service = UserService::new(db);
+    let users = service.all().await?;
 
-        let users = service.all().await?;
+    Response::from_json(&users)
+}
 
-        Response::from_json(&users)
+#[utoipa::path(
+        get,
+        path = "/api/users/{id}",
+        tag = "Users",
+        params(
+            ("id" = u32, Path, description = "User ID")
+        ),
+        responses(
+            (status = 200, description = "User found", body = User),
+            (status = 404, description = "User not found")
+        )
+    )]
+pub async fn one(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let id = parse_id(&ctx)?;
+
+    let db = ctx.d1("DB")?;
+    let service = UserService::new(db);
+
+    match service.one(id).await? {
+        Some(user) => Response::from_json(&user),
+        None => Response::error("User not found", 404),
     }
+}
 
-    pub async fn one(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
-        let id = Self::parse_id(&ctx)?;
+#[utoipa::path(
+        post,
+        path = "/api/users",
+        tag = "Users",
+        request_body = CreateUserDto,
+        responses(
+            (status = 200, description = "User created", body = String)
+        )
+    )]
+pub async fn create(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let data: CreateUserDto = req.json().await?;
 
-        let db = ctx.d1("DB")?;
-        let service = UserService::new(db);
+    let db = ctx.d1("DB")?;
+    let service = UserService::new(db);
 
-        match service.one(id).await? {
-            Some(user) => Response::from_json(&user),
-            None => Response::error("User not found", 404),
-        }
-    }
+    service.create(data).await?;
 
-    pub async fn create(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-        let data: CreateUserDto = req.json().await?;
+    Response::ok("User created")
+}
 
-        let db = ctx.d1("DB")?;
-        let service = UserService::new(db);
+#[utoipa::path(
+        put,
+        path = "/api/users/{id}",
+        tag = "Users",
+        params(
+            ("id" = u32, Path, description = "User ID")
+        ),
+        request_body = UpdateUserDto,
+        responses(
+            (status = 200, description = "User updated", body = String)
+        )
+    )]
+pub async fn update(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let id = parse_id(&ctx)?;
+    let data: UpdateUserDto = req.json().await?;
 
-        service.create(data).await?;
+    let db = ctx.d1("DB")?;
+    let service = UserService::new(db);
 
-        Response::ok("User created")
-    }
+    service.update(id, data).await?;
 
-    pub async fn update(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-        let id = Self::parse_id(&ctx)?;
-        let data: UpdateUserDto = req.json().await?;
+    Response::ok("User updated")
+}
 
-        let db = ctx.d1("DB")?;
-        let service = UserService::new(db);
+#[utoipa::path(
+        delete,
+        path = "/api/users/{id}",
+        tag = "Users",
+        params(
+            ("id" = u32, Path, description = "User ID")
+        ),
+        responses(
+            (status = 200, description = "User deleted", body = String)
+        )
+    )]
+pub async fn delete(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+    let id = parse_id(&ctx)?;
 
-        service.update(id, data).await?;
+    let db = ctx.d1("DB")?;
+    let service = UserService::new(db);
 
-        Response::ok("User updated")
-    }
+    service.delete(id).await?;
 
-    pub async fn delete(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
-        let id = Self::parse_id(&ctx)?;
+    Response::ok("User deleted")
+}
 
-        let db = ctx.d1("DB")?;
-        let service = UserService::new(db);
-
-        service.delete(id).await?;
-
-        Response::ok("User deleted")
-    }
-
-    fn parse_id(ctx: &RouteContext<()>) -> Result<u32> {
-        ctx.param("id")
-            .unwrap()
-            .parse::<u32>()
-            .map_err(|_| worker::Error::RustError("Invalid user ID".into()))
-    }
+fn parse_id(ctx: &RouteContext<()>) -> Result<u32> {
+    ctx.param("id")
+        .unwrap()
+        .parse::<u32>()
+        .map_err(|_| worker::Error::RustError("Invalid user ID".into()))
 }
