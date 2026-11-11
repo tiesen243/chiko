@@ -1,3 +1,4 @@
+pub mod docs;
 pub mod modules;
 pub mod router;
 

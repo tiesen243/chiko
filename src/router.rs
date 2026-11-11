@@ -11,4 +11,6 @@ pub fn router() -> Router<'static, ()> {
     router
         .get("/", |_req, _ctx| Response::ok("Hello, World!"))
         .get("/health", |_req, _ctx| Response::ok("OK"))
+        .get_async("/openapi.json", crate::docs::openapi)
+        .get_async("/docs", crate::docs::swagger)
 }
