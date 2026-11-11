@@ -1,53 +1,90 @@
+use worker::{D1Database, D1Type, Result};
+
 use crate::modules::post::{
     application::{CreatePostDto, UpdatePostDto},
     domain::Post,
 };
 
 pub struct PostService {
-    posts: Vec<Post>,
+    db: D1Database,
 }
 
 impl PostService {
-    pub fn new() -> Self {
-        PostService { posts: Vec::new() }
+    pub fn new(db: D1Database) -> Self {
+        Self { db }
     }
 
-    pub fn all(&self) -> &Vec<Post> {
-        &self.posts
+    pub async fn all(&self) -> Result<Vec<Post>> {
+        let result = self
+            .db
+            .prepare("SELECT id, title, content FROM posts ORDER BY id")
+            .all()
+            .await?;
+
+        result.results()
     }
 
-    pub fn one(&self, id: u32) -> Option<&Post> {
-        self.posts.iter().find(|post| post.get_id() == id)
+    pub async fn one(&self, id: u32) -> Result<Option<Post>> {
+        let id = D1Type::Integer(id as i32);
+
+        self.db
+            .prepare("SELECT id, title, content FROM posts WHERE id = ?")
+            .bind_refs([&id])?
+            .first(None)
+            .await
     }
 
-    pub fn create(&mut self, data: CreatePostDto) -> &Post {
-        let post = Post::new(data.id, data.title, data.content);
-        self.posts.push(post);
-        self.posts.last().unwrap()
+    pub async fn create(&self, data: CreatePostDto) -> Result<()> {
+        let title = D1Type::Text(&data.title);
+        let content = D1Type::Text(&data.content);
+
+        self.db
+            .prepare("INSERT INTO posts (title, content) VALUES (?, ?)")
+            .bind_refs([&title, &content])?
+            .run()
+            .await?;
+
+        Ok(())
     }
 
-    pub fn update(&mut self, id: u32, data: UpdatePostDto) -> Option<&Post> {
-        if let Some(post) = self.posts.iter_mut().find(|post| post.get_id() == id) {
-            if let Some(title) = data.title {
-                post.set_title(title);
-            }
+    pub async fn update(&self, id: u32, data: UpdatePostDto) -> Result<()> {
+        let id = D1Type::Integer(id as i32);
 
-            if let Some(content) = data.content {
-                post.set_content(content);
-            }
+        let title = data
+            .title
+            .as_deref()
+            .map(D1Type::Text)
+            .unwrap_or(D1Type::Null);
 
-            return Some(post);
-        }
+        let content = data
+            .content
+            .as_deref()
+            .map(D1Type::Text)
+            .unwrap_or(D1Type::Null);
 
-        None
+        self.db
+            .prepare(
+                "UPDATE posts
+                 SET title = COALESCE(?, title),
+                     content = COALESCE(?, content)
+                 WHERE id = ?",
+            )
+            .bind_refs([&title, &content, &id])?
+            .run()
+            .await?;
+
+        Ok(())
     }
 
-    pub fn delete(&mut self, id: u32) -> bool {
-        if let Some(pos) = self.posts.iter().position(|post| post.get_id() == id) {
-            self.posts.remove(pos);
-            return true;
-        }
+    pub async fn delete(&self, id: u32) -> Result<()> {
+        let id = D1Type::Integer(id as i32);
 
-        false
+        self.db
+            .prepare("DELETE FROM posts WHERE id = ?")
+            .bind_refs([&id])?
+            .run()
+            .await?;
+
+        Ok(())
     }
 }

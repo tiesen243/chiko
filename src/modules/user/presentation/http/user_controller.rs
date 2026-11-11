@@ -1,67 +1,69 @@
-use std::sync::{Arc, Mutex};
-
 use worker::{Request, Response, Result, RouteContext};
 
 use crate::modules::user::application::{CreateUserDto, UpdateUserDto, UserService};
 
-pub struct UserController {
-    user_service: Arc<Mutex<UserService>>,
-}
+pub struct UserController;
 
 impl UserController {
-    pub fn new(user_service: UserService) -> Self {
-        Self {
-            user_service: Arc::new(Mutex::new(user_service)),
-        }
+    pub async fn all(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+        let db = ctx.d1("DB")?;
+        let service = UserService::new(db);
+
+        let users = service.all().await?;
+
+        Response::from_json(&users)
     }
 
-    pub async fn all(&self, _req: Request, _ctx: RouteContext<()>) -> Result<Response> {
-        let service = self.user_service.lock().unwrap();
+    pub async fn one(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+        let id = Self::parse_id(&ctx)?;
 
-        Response::from_json(service.all())
-    }
+        let db = ctx.d1("DB")?;
+        let service = UserService::new(db);
 
-    pub async fn one(&self, _req: Request, ctx: RouteContext<()>) -> Result<Response> {
-        let service = self.user_service.lock().unwrap();
-
-        let id = ctx.param("id").unwrap().parse::<u32>().unwrap();
-
-        match service.one(id) {
-            Some(user) => Response::from_json(user),
+        match service.one(id).await? {
+            Some(user) => Response::from_json(&user),
             None => Response::error("User not found", 404),
         }
     }
 
-    pub async fn create(&self, mut req: Request, _ctx: RouteContext<()>) -> Result<Response> {
-        let mut service = self.user_service.lock().unwrap();
-
+    pub async fn create(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
         let data: CreateUserDto = req.json().await?;
-        let user = service.create(data);
 
-        Response::from_json(user)
+        let db = ctx.d1("DB")?;
+        let service = UserService::new(db);
+
+        service.create(data).await?;
+
+        Response::ok("User created")
     }
 
-    pub async fn update(&self, mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-        let mut service = self.user_service.lock().unwrap();
-
-        let id = ctx.param("id").unwrap().parse::<u32>().unwrap();
+    pub async fn update(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+        let id = Self::parse_id(&ctx)?;
         let data: UpdateUserDto = req.json().await?;
 
-        match service.update(id, data) {
-            Some(user) => Response::from_json(user),
-            None => Response::error("User not found", 404),
-        }
+        let db = ctx.d1("DB")?;
+        let service = UserService::new(db);
+
+        service.update(id, data).await?;
+
+        Response::ok("User updated")
     }
 
-    pub async fn delete(&self, _req: Request, ctx: RouteContext<()>) -> Result<Response> {
-        let mut service = self.user_service.lock().unwrap();
+    pub async fn delete(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+        let id = Self::parse_id(&ctx)?;
 
-        let id = ctx.param("id").unwrap().parse::<u32>().unwrap();
+        let db = ctx.d1("DB")?;
+        let service = UserService::new(db);
 
-        if service.delete(id) {
-            Response::ok("User deleted")
-        } else {
-            Response::error("User not found", 404)
-        }
+        service.delete(id).await?;
+
+        Response::ok("User deleted")
+    }
+
+    fn parse_id(ctx: &RouteContext<()>) -> Result<u32> {
+        ctx.param("id")
+            .unwrap()
+            .parse::<u32>()
+            .map_err(|_| worker::Error::RustError("Invalid user ID".into()))
     }
 }

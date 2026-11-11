@@ -2,7 +2,6 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 pub struct CreatePostDto {
-    pub id: u32,
     pub title: String,
     pub content: String,
 }

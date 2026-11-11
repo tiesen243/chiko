@@ -1,67 +1,69 @@
-use std::sync::{Arc, Mutex};
-
 use worker::{Request, Response, Result, RouteContext};
 
 use crate::modules::post::application::{CreatePostDto, PostService, UpdatePostDto};
 
-pub struct PostController {
-    post_service: Arc<Mutex<PostService>>,
-}
+pub struct PostController;
 
 impl PostController {
-    pub fn new(post_service: PostService) -> Self {
-        Self {
-            post_service: Arc::new(Mutex::new(post_service)),
-        }
+    pub async fn all(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+        let db = ctx.d1("DB")?;
+        let service = PostService::new(db);
+
+        let posts = service.all().await?;
+
+        Response::from_json(&posts)
     }
 
-    pub async fn all(&self, _req: Request, _ctx: RouteContext<()>) -> Result<Response> {
-        let service = self.post_service.lock().unwrap();
+    pub async fn one(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+        let id = Self::parse_id(&ctx)?;
 
-        Response::from_json(service.all())
-    }
+        let db = ctx.d1("DB")?;
+        let service = PostService::new(db);
 
-    pub async fn one(&self, _req: Request, ctx: RouteContext<()>) -> Result<Response> {
-        let service = self.post_service.lock().unwrap();
-
-        let id = ctx.param("id").unwrap().parse::<u32>().unwrap();
-
-        match service.one(id) {
-            Some(post) => Response::from_json(post),
+        match service.one(id).await? {
+            Some(post) => Response::from_json(&post),
             None => Response::error("Post not found", 404),
         }
     }
 
-    pub async fn create(&self, mut req: Request, _ctx: RouteContext<()>) -> Result<Response> {
-        let mut service = self.post_service.lock().unwrap();
-
+    pub async fn create(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
         let data: CreatePostDto = req.json().await?;
-        let post = service.create(data);
 
-        Response::from_json(post)
+        let db = ctx.d1("DB")?;
+        let service = PostService::new(db);
+
+        service.create(data).await?;
+
+        Response::ok("Post created")
     }
 
-    pub async fn update(&self, mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
-        let mut service = self.post_service.lock().unwrap();
-
-        let id = ctx.param("id").unwrap().parse::<u32>().unwrap();
+    pub async fn update(mut req: Request, ctx: RouteContext<()>) -> Result<Response> {
+        let id = Self::parse_id(&ctx)?;
         let data: UpdatePostDto = req.json().await?;
 
-        match service.update(id, data) {
-            Some(post) => Response::from_json(post),
-            None => Response::error("Post not found", 404),
-        }
+        let db = ctx.d1("DB")?;
+        let service = PostService::new(db);
+
+        service.update(id, data).await?;
+
+        Response::ok("Post updated")
     }
 
-    pub async fn delete(&self, _req: Request, ctx: RouteContext<()>) -> Result<Response> {
-        let mut service = self.post_service.lock().unwrap();
+    pub async fn delete(_req: Request, ctx: RouteContext<()>) -> Result<Response> {
+        let id = Self::parse_id(&ctx)?;
 
-        let id = ctx.param("id").unwrap().parse::<u32>().unwrap();
+        let db = ctx.d1("DB")?;
+        let service = PostService::new(db);
 
-        if service.delete(id) {
-            Response::ok("Post deleted")
-        } else {
-            Response::error("Post not found", 404)
-        }
+        service.delete(id).await?;
+
+        Response::ok("Post deleted")
+    }
+
+    fn parse_id(ctx: &RouteContext<()>) -> Result<u32> {
+        ctx.param("id")
+            .unwrap()
+            .parse::<u32>()
+            .map_err(|_| worker::Error::RustError("Invalid post ID".into()))
     }
 }

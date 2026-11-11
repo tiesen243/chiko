@@ -1,53 +1,90 @@
+use worker::{D1Database, D1Type, Result};
+
 use crate::modules::user::{
     application::{CreateUserDto, UpdateUserDto},
     domain::User,
 };
 
 pub struct UserService {
-    users: Vec<User>,
+    db: D1Database,
 }
 
 impl UserService {
-    pub fn new() -> Self {
-        UserService { users: Vec::new() }
+    pub fn new(db: D1Database) -> Self {
+        Self { db }
     }
 
-    pub fn all(&self) -> &Vec<User> {
-        &self.users
+    pub async fn all(&self) -> Result<Vec<User>> {
+        let result = self
+            .db
+            .prepare("SELECT id, username, email FROM users ORDER BY id")
+            .all()
+            .await?;
+
+        result.results()
     }
 
-    pub fn one(&self, id: u32) -> Option<&User> {
-        self.users.iter().find(|user| user.get_id() == id)
+    pub async fn one(&self, id: u32) -> Result<Option<User>> {
+        let id = D1Type::Integer(id as i32);
+
+        self.db
+            .prepare("SELECT id, username, email FROM users WHERE id = ?")
+            .bind_refs([&id])?
+            .first(None)
+            .await
     }
 
-    pub fn create(&mut self, data: CreateUserDto) -> &User {
-        let user = User::new(data.id, data.username, data.email);
-        self.users.push(user);
-        self.users.last().unwrap()
+    pub async fn create(&self, data: CreateUserDto) -> Result<()> {
+        let username = D1Type::Text(&data.username);
+        let email = D1Type::Text(&data.email);
+
+        self.db
+            .prepare("INSERT INTO users (username, email) VALUES (?, ?)")
+            .bind_refs([&username, &email])?
+            .run()
+            .await?;
+
+        Ok(())
     }
 
-    pub fn update(&mut self, id: u32, data: UpdateUserDto) -> Option<&User> {
-        if let Some(user) = self.users.iter_mut().find(|user| user.get_id() == id) {
-            if let Some(username) = data.username {
-                user.set_username(username);
-            }
+    pub async fn update(&self, id: u32, data: UpdateUserDto) -> Result<()> {
+        let id = D1Type::Integer(id as i32);
 
-            if let Some(email) = data.email {
-                user.set_email(email);
-            }
+        let username = data
+            .username
+            .as_deref()
+            .map(D1Type::Text)
+            .unwrap_or(D1Type::Null);
 
-            return Some(user);
-        }
+        let email = data
+            .email
+            .as_deref()
+            .map(D1Type::Text)
+            .unwrap_or(D1Type::Null);
 
-        None
+        self.db
+            .prepare(
+                "UPDATE users
+                 SET username = COALESCE(?, username),
+                     email = COALESCE(?, email)
+                 WHERE id = ?",
+            )
+            .bind_refs([&username, &email, &id])?
+            .run()
+            .await?;
+
+        Ok(())
     }
 
-    pub fn delete(&mut self, id: u32) -> bool {
-        if let Some(pos) = self.users.iter().position(|user| user.get_id() == id) {
-            self.users.remove(pos);
-            return true;
-        }
+    pub async fn delete(&self, id: u32) -> Result<()> {
+        let id = D1Type::Integer(id as i32);
 
-        false
+        self.db
+            .prepare("DELETE FROM users WHERE id = ?")
+            .bind_refs([&id])?
+            .run()
+            .await?;
+
+        Ok(())
     }
 }
